@@ -3,7 +3,7 @@
     <v-main class="d-flex align-center justify-center" style="min-height: 100vh; background: linear-gradient(135deg, #1976d2 0%, #90caf9 100%);">
       <v-card elevation="12" class="pa-8" max-width="600" rounded="xl">
         <v-row justify="center" class="mb-6">
-          <v-icon color="primary" size="48">mdi-microphone-variant</v-icon>
+          <v-icon color="primary" size="48">{{ mdiCheck }}</v-icon>
           <span class="text-h4 font-weight-bold ml-2" style="color:#1976d2">Code Karaoke</span>
         </v-row>
         <v-textarea
@@ -61,6 +61,7 @@
 </template>
 
 <script setup>
+import { mdiCheck } from '@mdi/js';
 import { ref } from 'vue';
 
 const codeInput = ref('');
