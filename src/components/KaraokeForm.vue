@@ -72,6 +72,7 @@ const emit = defineEmits(['sing', 'reset']);
 
 const props = defineProps({ resetForm: Boolean });
 
+// codeInput
 const codeInput = ref('');
 const codeInputError = ref('');
 const genre = ref('Rap');
