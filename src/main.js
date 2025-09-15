@@ -1,5 +1,5 @@
 
-// import '@mdi/font/css/materialdesignicons.css';
+import '@mdi/font/css/materialdesignicons.css';
 import { createApp } from 'vue';
 import { createVuetify } from 'vuetify';
 import 'vuetify/styles';
@@ -23,6 +23,9 @@ const vuetify = createVuetify({
 				},
 			},
 		},
+	},
+	icons: {
+		defaultSet: 'mdi',
 	},
 });
 
