@@ -52,17 +52,18 @@
         :disabled="singMode"
       />
     </v-row>
-    <v-btn
-      v-if="!singMode"
-      @click="onSingClick"
-      color="primary"
-      size="large"
-      class="mb-6"
-      elevation="6"
-    >
-      <v-icon left color="secondary" style="margin-right:8px;">mdi-microphone</v-icon>
-      Sing My Code
-    </v-btn>
+      <v-row justify="center" class="mb-6">
+        <v-btn
+          v-if="!singMode"
+          @click="onSingClick"
+          color="primary"
+          size="large"
+          elevation="6"
+        >
+          <v-icon left color="secondary" style="margin-right:8px;">mdi-microphone</v-icon>
+          Sing My Code
+        </v-btn>
+      </v-row>
   </v-card>
 </template>
 
