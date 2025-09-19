@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { defineEmits, defineProps, onUnmounted, ref, watch } from 'vue';
+import { defineEmits, defineProps, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
   lyrics: Array,
@@ -70,31 +70,31 @@ watch(() => props.lyrics, (newLyrics) => {
   currentLyric.value = 0;
 });
 
-onUnmounted(() => {
-  if (lyricTimer) clearInterval(lyricTimer);
-});
 // ...existing code...
 
 
-// Automatically play audio when loading becomes false and audioUrl is set
-watch(
-  () => [props.loading, props.audioUrl],
-  async ([loading, audioUrl]) => {
-    if (!loading && audioUrl) {
-      setTimeout(async () => {
-        if (audioEl.value) {
-          try {
-            await audioEl.value.play();
-            showManualPlay.value = false;
-          } catch (err) {
-            showManualPlay.value = true;
-            console.warn('Autoplay blocked:', err);
+// Auto play audio and lyrics when singMode is true and audioUrl is set
+onMounted(() => {
+  watch(
+    () => [props.singMode, props.audioUrl],
+    async ([singMode, audioUrl]) => {
+      if (singMode && audioUrl) {
+        setTimeout(async () => {
+          if (audioEl.value) {
+            try {
+              await audioEl.value.play();
+              showManualPlay.value = false;
+            } catch (err) {
+              showManualPlay.value = true;
+              console.warn('Autoplay blocked:', err);
+            }
           }
-        }
-      }, 300);
-    }
-  }
-);
+        }, 300);
+      }
+    },
+    { immediate: true }
+  );
+});
 
 function handlePlayLyrics() {
   lyricsPlaying.value = true;
