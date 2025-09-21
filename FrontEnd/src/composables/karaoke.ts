@@ -12,15 +12,23 @@ export async function fetchLyrics(payload: KaraokeRequest): Promise<KaraokeLyric
   return data;
 }
 
-export async function fetchAudio(payload: KaraokeRequestAudio): Promise<KaraokeAudioResponse> {
-  const params = new URLSearchParams({
-    lyrics: payload.input,
-    voice: payload.voice
+// Generate singing karaoke audio using Suno API
+export async function fetchAudio(payload: { lyrics: string; genre: string; voice: string }): Promise<KaraokeAudioResponse> {
+  const res = await fetch('/api/karaoke-audio', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      lyrics: payload.lyrics,
+      genre: payload.genre,
+      voice: payload.voice
+    })
   });
-  const res = await fetch(`/api/tts?${params.toString()}`, {
-    method: 'GET'
-  });
-  if (!res.ok) throw new Error('Failed to fetch audio');
+  
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to generate karaoke audio');
+  }
+  
   const audioBuffer = await res.arrayBuffer();
   const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
   const audioUrl = URL.createObjectURL(audioBlob);
@@ -29,20 +37,10 @@ export async function fetchAudio(payload: KaraokeRequestAudio): Promise<KaraokeA
   return { audioUrl };
 }
 
-// Upload TTS audio and mix with BGM
+// Legacy function - kept for backward compatibility but not used with Suno API
 export async function addBgmToAudio(ttsAudioBlob: Blob, genre: string, voice: string): Promise<KaraokeAudioResponse> {
-  const formData = new FormData();
-  formData.append('ttsAudio', ttsAudioBlob, 'tts.mp3');
-  formData.append('genre', genre);
-  formData.append('voice', voice);
-  const res = await fetch('/api/add-bgm', {
-    method: 'POST',
-    body: formData
-  });
-  if (!res.ok) throw new Error('Failed to add BGM to audio');
-  const audioBuffer = await res.arrayBuffer();
-  const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-  const audioUrl = URL.createObjectURL(audioBlob);
-  console.log('addBgmToAudio URL:', audioUrl);
-  return { audioUrl };
+  // This function is no longer needed with Suno API as it generates complete musical tracks
+  // But keeping it for backward compatibility
+  console.warn('addBgmToAudio is deprecated when using Suno API - complete tracks are generated directly');
+  return fetchAudio({ lyrics: '', genre, voice });
 }

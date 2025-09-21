@@ -1,16 +1,35 @@
 <template>
-  <div v-if="singMode" class="vibe-coding-right d-flex flex-column align-center justify-center" style="width:420px; max-width:600px; margin-left:40px; position:relative; background:transparent; box-shadow:none;">
+  <div v-if="singMode" class="vibe-coding-right d-flex flex-column align-center justify-center" style="width:600px; max-width:800px; margin-left:40px; position:relative; background:transparent; box-shadow:none;">
     <div v-if="loading" class="d-flex flex-column align-center justify-center" style="height:300px; width:100%;">
       <v-progress-circular indeterminate color="primary" size="64" />
       <span class="text-h6 mt-4" style="color:#fff;">Generating lyrics and audio...</span>
     </div>
     <template v-else>
-  <video v-if="voiceType === 'Female'" ref="karaokeVideo" src="../assets/img/animeSinging_girl.mp4" style="width:400px; max-width:90vw; border-radius:16px; box-shadow:0 2px 16px #90caf9; background:transparent;" muted loop></video>
-  <video v-if="voiceType === 'Male'" ref="karaokeVideo" src="../assets/img/animeSinging_boy.mp4" style="width:400px; max-width:90vw; border-radius:16px; box-shadow:0 2px 16px #90caf9; background:transparent;" muted loop></video>
-      <div class="lyrics-below" style="width:100%; text-align:center; margin-top:30px; background:none; overflow-wrap:break-word; word-break:break-word;">
-        <div v-if="lyrics && lyrics.length" class="lyric-story-container" style="height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
+      <!-- Add gap above image -->
+      <div style="height: 20px;"></div>
+      
+  <video v-if="voiceType === 'Female'" ref="karaokeVideo" src="../assets/img/animeSinging_girl.mp4" style="width:500px; max-width:90vw; border-radius:16px; box-shadow:0 2px 16px #90caf9; background:transparent;" muted loop></video>
+  <video v-if="voiceType === 'Male'" ref="karaokeVideo" src="../assets/img/animeSinging_boy.mp4" style="width:500px; max-width:90vw; border-radius:16px; box-shadow:0 2px 16px #90caf9; background:transparent;" muted loop></video>
+      
+      <!-- Waveform Display - Moved to top -->
+      <div v-if="props.audioUrl" class="waveform-top-container" :class="{ 'active': isPlaying }">
+        <div class="waveform-top-display">
+          <div 
+            class="wave-line-top" 
+            v-for="i in 40" 
+            :key="i" 
+            :style="{ 
+              animationDelay: (i * 0.05) + 's',
+              height: getWaveHeight(i) + '%'
+            }"
+          ></div>
+        </div>
+      </div>
+      
+      <div class="lyrics-below" style="width:100%; text-align:center; background:none; overflow-wrap:break-word; word-break:break-word;">
+        <div v-if="lyrics && lyrics.length" class="lyric-story-container" style="height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
           <transition name="lyric-rise" mode="out-in">
-            <span :key="currentLyric" class="text-h4 font-weight-bold" style="color:#fff; border-radius:8px; padding:8px 24px; display:inline-block; background:none;">
+            <span :key="currentLyric" class="text-h5 font-weight-bold" style="color:#fff; border-radius:8px; padding:6px 20px; display:inline-block; background:none; line-height: 1.2;">
               {{ lyrics[currentLyric] }}
             </span>
           </transition>
@@ -30,17 +49,87 @@
         </div>
         <!-- Audio player removed: only lyrics are displayed -->
       </div>
-      <div class="w-100 d-flex justify-center mb-4" style="margin-top:10px; background:transparent;">
-        <audio
-          v-if="props.audioUrl"
-          ref="audioEl"
-          :src="props.audioUrl"
-          controls
-          style="width: 300px; background:transparent;"
-          @play="handlePlayLyrics"
-          @pause="handlePauseLyrics"
-          @timeupdate="syncLyricsToAudio"
-        ></audio>
+      <div class="w-100 d-flex justify-center mb-2" style="margin-top:10px; background:transparent;">
+        <!-- Compact Modern Audio Player -->
+        <div v-if="props.audioUrl" class="compact-audio-player">
+          <audio
+            ref="audioEl"
+            :src="props.audioUrl"
+            @play="handlePlayLyrics"
+            @pause="handlePauseLyrics"
+            @timeupdate="syncLyricsToAudio"
+            @loadedmetadata="updateDuration"
+            @ended="handleAudioEnded"
+            style="display: none;"
+          ></audio>
+          
+          <!-- Compact Player Container -->
+          <div class="compact-player-container">
+            <!-- Play/Pause Button -->
+            <button @click="togglePlayPause" class="compact-play-btn">
+              <v-icon v-if="!isPlaying" size="28" color="white">mdi-play</v-icon>
+              <v-icon v-else size="28" color="white">mdi-pause</v-icon>
+            </button>
+            
+            <!-- Progress and Time Section -->
+            <div class="compact-progress-section">
+              <!-- Time Display -->
+              <div class="compact-time-display">
+                <span class="current-time">{{ formatTime(currentTime) }}</span>
+                <span class="duration">{{ formatTime(duration) }}</span>
+              </div>
+              
+              <!-- Progress Bar -->
+              <div class="compact-progress-container" @click="seekAudio">
+                <div class="compact-progress-bg"></div>
+                <div class="compact-progress-fill" :style="{ width: progressPercent + '%' }"></div>
+                <div class="compact-progress-handle" :style="{ left: progressPercent + '%' }"></div>
+              </div>
+            </div>
+            
+            <!-- Controls Section -->
+            <div class="compact-controls-section">
+              <!-- Volume Control -->
+              <div class="compact-volume-section">
+                <v-icon @click="toggleMute" class="volume-icon" color="white" size="22">
+                  {{ isMuted ? 'mdi-volume-off' : (volume > 0.5 ? 'mdi-volume-high' : 'mdi-volume-medium') }}
+                </v-icon>
+                <div class="compact-volume-slider" @click="setVolume">
+                  <div class="compact-volume-bg"></div>
+                  <div class="compact-volume-fill" :style="{ width: (isMuted ? 0 : volume * 100) + '%' }"></div>
+                </div>
+              </div>
+              
+              <!-- Playback Speed Control -->
+              <div class="compact-speed-section">
+                <v-menu offset-y>
+                  <template v-slot:activator="{ props }">
+                    <v-btn v-bind="props" icon size="small" class="compact-speed-btn">
+                      <v-icon color="white" size="20">mdi-speedometer</v-icon>
+                    </v-btn>
+                  </template>
+                  <v-list class="speed-menu">
+                    <v-list-item 
+                      v-for="speed in speedOptions" 
+                      :key="speed"
+                      @click="setPlaybackSpeed(speed)"
+                      :class="{ 'active-speed': playbackRate === speed }"
+                    >
+                      <v-list-item-title>{{ speed }}x</v-list-item-title>
+                    </v-list-item>
+                  </v-list>
+                </v-menu>
+              </div>
+              
+              <!-- Download Button -->
+              <div class="compact-download-section">
+                <v-btn @click="downloadAudio" icon size="small" class="compact-download-btn">
+                  <v-icon color="white" size="20">mdi-download</v-icon>
+                </v-btn>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="d-flex justify-start" style="background:transparent;">
         <v-btn @click="handleBackClick" color="primary" class="mt-3">Back</v-btn>
@@ -50,7 +139,7 @@
 </template>
 
 <script setup>
-import { defineEmits, defineProps, onMounted, ref, watch } from 'vue';
+import { defineEmits, defineProps, onMounted, ref, watch, computed } from 'vue';
 
 const props = defineProps({
   lyrics: Array,
@@ -65,6 +154,149 @@ const audioEl = ref(null);
 const currentLyric = ref(0);
 let lyricsPlaying = ref(false);
 const showManualPlay = ref(false);
+
+// Modern audio player state
+const isPlaying = ref(false);
+const currentTime = ref(0);
+const duration = ref(0);
+const volume = ref(1);
+const isMuted = ref(false);
+const playbackRate = ref(1);
+const speedOptions = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+const progressPercent = computed(() => {
+  return duration.value > 0 ? (currentTime.value / duration.value) * 100 : 0;
+});
+
+// Modern audio player methods
+function togglePlayPause() {
+  if (!audioEl.value) return;
+  
+  if (isPlaying.value) {
+    audioEl.value.pause();
+  } else {
+    audioEl.value.play();
+  }
+  isPlaying.value = !isPlaying.value;
+}
+
+function updateDuration() {
+  if (audioEl.value) {
+    duration.value = audioEl.value.duration || 0;
+  }
+}
+
+function formatTime(seconds) {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function seekAudio(event) {
+  if (!audioEl.value || !duration.value) return;
+  
+  const rect = event.currentTarget.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const clickPercent = clickX / rect.width;
+  const newTime = clickPercent * duration.value;
+  
+  audioEl.value.currentTime = newTime;
+  currentTime.value = newTime;
+}
+
+function toggleMute() {
+  if (!audioEl.value) return;
+  
+  isMuted.value = !isMuted.value;
+  audioEl.value.muted = isMuted.value;
+}
+
+function setVolume(event) {
+  if (!audioEl.value) return;
+  
+  const rect = event.currentTarget.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const newVolume = Math.max(0, Math.min(1, clickX / rect.width));
+  
+  volume.value = newVolume;
+  audioEl.value.volume = newVolume;
+  if (newVolume > 0) isMuted.value = false;
+}
+
+function handleAudioEnded() {
+  isPlaying.value = false;
+  currentTime.value = 0;
+  currentLyric.value = 0;
+  lyricsPlaying.value = false;
+}
+
+function setPlaybackSpeed(speed) {
+  if (!audioEl.value) return;
+  
+  playbackRate.value = speed;
+  audioEl.value.playbackRate = speed;
+}
+
+function downloadAudio() {
+  if (!props.audioUrl) return;
+  
+  // Create a temporary anchor element to trigger download
+  const link = document.createElement('a');
+  link.href = props.audioUrl;
+  link.download = 'karaoke-audio.mp3'; // You can make this dynamic based on song name
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function getWaveHeight(index) {
+  // Create varied wave heights based on index and time for realistic effect
+  const baseHeight = 20;
+  const variation = Math.sin((index * 0.5) + (currentTime.value * 2)) * 30;
+  const randomFactor = Math.sin(index * 1.2) * 20;
+  return Math.max(10, baseHeight + variation + randomFactor);
+}
+
+// Calculate smart timing intervals based on lyric lengths
+function calculateLyricTimings(lyrics, totalDuration) {
+  if (!lyrics || lyrics.length === 0) return [];
+  
+  // Calculate relative weights based on lyric length and complexity
+  const weights = lyrics.map(lyric => {
+    const words = lyric.split(' ').length;
+    const chars = lyric.length;
+    // Weight based on both word count and character count
+    return Math.max(1, (words * 0.7) + (chars * 0.01));
+  });
+  
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  
+  // Dynamic intro/outro calculation based on song length
+  const introTime = Math.min(totalDuration * 0.12, 4); // Slightly longer intro
+  const outroTime = Math.min(totalDuration * 0.08, 3); // Shorter outro
+  const contentDuration = totalDuration - introTime - outroTime;
+  
+  // Calculate cumulative timing with buffer zones
+  const timings = [];
+  let currentTime = introTime;
+  
+  for (let i = 0; i < lyrics.length; i++) {
+    const lyricDuration = (weights[i] / totalWeight) * contentDuration;
+    const bufferTime = lyricDuration * 0.1; // 10% buffer for natural transitions
+    
+    timings.push({
+      startTime: currentTime,
+      endTime: currentTime + lyricDuration - bufferTime,
+      duration: lyricDuration,
+      weight: weights[i],
+      index: i
+    });
+    currentTime += lyricDuration;
+  }
+  
+  return timings;
+}
 
 watch(() => props.lyrics, (newLyrics) => {
   currentLyric.value = 0;
@@ -98,25 +330,50 @@ onMounted(() => {
 
 function handlePlayLyrics() {
   lyricsPlaying.value = true;
+  isPlaying.value = true;
   if (karaokeVideo.value) karaokeVideo.value.play();
 }
 function handlePauseLyrics() {
   lyricsPlaying.value = false;
+  isPlaying.value = false;
   if (karaokeVideo.value) karaokeVideo.value.pause();
 }
 function syncLyricsToAudio(e) {
   // Use the event's currentTime for more accurate sync
   const audio = e?.target || audioEl.value;
   if (!audio) return;
-  const totalLines = props.lyrics.length;
+  
+  // Update current time for player display
+  currentTime.value = audio.currentTime;
+  
   const totalDuration = audio.duration || 1;
-  const lyricDuration = totalDuration / (totalLines || 1);
-  let newLyricIndex = Math.floor(audio.currentTime / lyricDuration);
-  if (newLyricIndex < 0) newLyricIndex = 0;
-  if (newLyricIndex >= totalLines) newLyricIndex = totalLines - 1;
-  if (newLyricIndex !== currentLyric.value) {
-    currentLyric.value = newLyricIndex;
+  const totalLines = props.lyrics.length;
+  
+  if (totalDuration > 0 && totalLines > 0) {
+    // Use smart timing calculation
+    const timings = calculateLyricTimings(props.lyrics, totalDuration);
+    
+    // Find which lyric should be displayed based on current time
+    let newLyricIndex = 0;
+    for (let i = 0; i < timings.length; i++) {
+      if (currentTime.value >= timings[i].startTime && currentTime.value < timings[i].endTime) {
+        newLyricIndex = i;
+        break;
+      } else if (currentTime.value >= timings[i].startTime) {
+        newLyricIndex = i; // Keep updating until we find the right range
+      }
+    }
+    
+    // Ensure index is within bounds
+    if (newLyricIndex < 0) newLyricIndex = 0;
+    if (newLyricIndex >= totalLines) newLyricIndex = totalLines - 1;
+    
+    if (newLyricIndex !== currentLyric.value) {
+      currentLyric.value = newLyricIndex;
+      console.log(`Smart sync: ${currentTime.toFixed(1)}s -> Line ${newLyricIndex + 1}/${totalLines}: "${props.lyrics[newLyricIndex]}"`);
+    }
   }
+  
   // Keep video in sync
   if (karaokeVideo.value) {
     if (lyricsPlaying.value) karaokeVideo.value.play();
@@ -184,5 +441,538 @@ function handleBackClick() {
 .lyric-rise-leave-to {
   opacity: 0;
   transform: translateY(-40px);
+}
+
+/* Modern Audio Player Styles */
+.modern-audio-player {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Top Waveform Styles */
+.waveform-top-container {
+  width: 100%;
+  max-width: 500px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 15px auto 10px auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 20px;
+  padding: 0;
+  backdrop-filter: blur(10px);
+}
+
+.waveform-top-display {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1px;
+  height: 100%;
+  width: 100%;
+  padding: 12px;
+}
+
+.wave-line-top {
+  width: 4px;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+  min-height: 6px;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  flex: 1;
+}
+
+.waveform-top-container.active .wave-line-top {
+  animation: wave-pulse-top 1s ease-in-out infinite;
+  opacity: 1;
+}
+
+@keyframes wave-pulse-top {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* Compact Audio Player Styles */
+.compact-audio-player {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.compact-player-container {
+  background: linear-gradient(135deg, rgba(30, 30, 30, 0.95), rgba(50, 50, 50, 0.85));
+  border-radius: 15px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  height: 80px;
+}
+
+.compact-play-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 50%;
+  width: 55px;
+  height: 55px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.4);
+  flex-shrink: 0;
+}
+
+.compact-play-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.6);
+}
+
+.compact-progress-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-time-display {
+  display: flex;
+  justify-content: space-between;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.compact-progress-container {
+  position: relative;
+  height: 6px;
+  cursor: pointer;
+}
+
+.compact-progress-bg {
+  background: rgba(255, 255, 255, 0.2);
+  height: 100%;
+  border-radius: 3px;
+}
+
+.compact-progress-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  border-radius: 3px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.1s ease;
+}
+
+.compact-progress-handle {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: left 0.1s ease;
+}
+
+.compact-controls-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.compact-volume-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-volume-slider {
+  width: 60px;
+  height: 4px;
+  position: relative;
+  cursor: pointer;
+}
+
+.compact-volume-bg {
+  background: rgba(255, 255, 255, 0.2);
+  height: 100%;
+  border-radius: 2px;
+}
+
+.compact-volume-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  border-radius: 2px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.2s ease;
+}
+
+.compact-speed-section, .compact-download-section {
+  display: flex;
+  align-items: center;
+}
+
+.compact-speed-btn, .compact-download-btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
+  transition: all 0.3s ease;
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.compact-speed-btn:hover, .compact-download-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  transform: scale(1.05);
+}
+
+.player-container {
+  background: linear-gradient(135deg, rgba(30, 30, 30, 0.95), rgba(50, 50, 50, 0.85));
+  border-radius: 20px;
+  padding: 25px 30px;
+  display: flex;
+  align-items: center;
+  gap: 25px;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Waveform Background */
+.waveform-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding: 10px;
+  opacity: 0.1;
+  z-index: 0;
+}
+
+.wave-bar {
+  width: 3px;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+  height: 20%;
+  animation: none;
+  transition: height 0.3s ease;
+}
+
+.waveform-bg.playing .wave-bar {
+  animation: wave-bounce 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes wave-bounce {
+  0% { height: 20%; }
+  100% { height: 80%; }
+}
+
+/* Main Waveform Display */
+.waveform-container {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.waveform-display {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  width: 100%;
+  max-width: 400px;
+}
+
+.wave-line {
+  width: 3px;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+  min-height: 4px;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+}
+
+.waveform-container.active .wave-line {
+  animation: wave-pulse 1s ease-in-out infinite;
+  opacity: 1;
+}
+
+@keyframes wave-pulse {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+.play-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  position: relative;
+  z-index: 2;
+}
+
+.play-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.play-btn:active {
+  transform: scale(0.95);
+}
+
+.progress-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  position: relative;
+  z-index: 2;
+}
+
+.time-display {
+  display: flex;
+  justify-content: space-between;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.progress-container {
+  position: relative;
+  height: 6px;
+  cursor: pointer;
+}
+
+.progress-bg {
+  background: rgba(255, 255, 255, 0.2);
+  height: 100%;
+  border-radius: 3px;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  border-radius: 3px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.1s ease;
+}
+
+.progress-handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: left 0.1s ease;
+}
+
+.volume-section {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  position: relative;
+  z-index: 2;
+}
+
+.volume-icon {
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.volume-icon:hover {
+  color: #667eea !important;
+}
+
+.volume-slider {
+  width: 60px;
+  height: 4px;
+  position: relative;
+  cursor: pointer;
+}
+
+.volume-bg {
+  background: rgba(255, 255, 255, 0.2);
+  height: 100%;
+  border-radius: 2px;
+}
+
+.volume-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  border-radius: 2px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 0.2s ease;
+}
+
+.speed-section, .download-section {
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+.speed-btn, .download-btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  transition: all 0.3s ease;
+  position: relative;
+  min-width: 50px !important;
+  height: 40px !important;
+}
+
+.speed-btn:hover, .download-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  transform: scale(1.05);
+}
+
+.speed-text {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: white;
+  font-weight: 600;
+}
+
+.speed-menu {
+  background: rgba(30, 30, 30, 0.95) !important;
+  backdrop-filter: blur(20px);
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.speed-menu .v-list-item {
+  color: white !important;
+  transition: background-color 0.2s ease;
+}
+
+.speed-menu .v-list-item:hover {
+  background: rgba(102, 126, 234, 0.3) !important;
+}
+
+.speed-menu .active-speed {
+  background: rgba(102, 126, 234, 0.5) !important;
+  color: #667eea !important;
+}
+
+@media (max-width: 600px) {
+  .player-container {
+    padding: 15px 20px;
+    gap: 15px;
+  }
+  
+  .play-btn {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .volume-section {
+    display: none;
+  }
+  
+  .speed-btn, .download-btn {
+    min-width: 40px !important;
+    height: 35px !important;
+  }
+  
+  .speed-text {
+    font-size: 9px;
+  }
+  
+  .waveform-container {
+    height: 40px;
+  }
+  
+  .waveform-display {
+    max-width: 200px;
+  }
+  
+  .wave-line {
+    width: 2px;
+  }
+  
+  .wave-bar {
+    width: 2px;
+  }
+  
+  /* Compact player mobile styles */
+  .compact-player-container {
+    padding: 12px 15px;
+    gap: 10px;
+    height: 70px;
+  }
+  
+  .compact-play-btn {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .compact-progress-section {
+    gap: 6px;
+  }
+  
+  .compact-volume-section {
+    display: none;
+  }
+  
+  .compact-controls-section {
+    gap: 8px;
+  }
+  
+  .waveform-top-container {
+    height: 45px;
+    padding: 8px;
+  }
+  
+  .wave-line-top {
+    width: 3px;
+  }
+  
+  .compact-speed-btn, .compact-download-btn {
+    width: 35px !important;
+    height: 35px !important;
+  }
 }
 </style>

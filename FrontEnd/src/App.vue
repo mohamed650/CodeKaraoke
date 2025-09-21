@@ -26,7 +26,7 @@
 import { ref } from 'vue';
 import KaraokeForm from './components/KaraokeForm.vue';
 import KaraokePlayer from './components/KaraokePlayer.vue';
-import { addBgmToAudio, fetchAudio, fetchLyrics } from './composables/karaoke';
+import { fetchAudio, fetchLyrics } from './composables/karaoke';
 
 const singMode = ref(false);
 const lyrics = ref([]);
@@ -42,36 +42,22 @@ function onSing(payload) {
   audioUrl.value = '';
   loading.value = true;
 
-  // Voice selection logic
-  let selectedVoice = 'alloy';
-  if (payload.voiceType === 'Male') {
-    if (payload.genre === 'Pop') selectedVoice = 'alloy';
-    else if (payload.genre === 'Anime') selectedVoice = 'onyx';
-    else if (payload.genre === 'Rap') selectedVoice = 'echo';
-  } else if (payload.voiceType === 'Female') {
-    if (payload.genre === 'Pop') selectedVoice = 'shimmer';
-  else if (payload.genre === 'Anime') selectedVoice = 'shimmer';
-    else if (payload.genre === 'Rap') selectedVoice = 'nova';
-  }
-
   fetchLyrics(payload)
     .then((data) => {
       lyrics.value = Array.isArray(data.lyrics) ? data.lyrics : [];
       if (lyrics.value.length) {
+        // Use Suno API to generate singing audio directly
         fetchAudio({
-          input: lyrics.value.join('\n'),
-          voice: selectedVoice
+          lyrics: lyrics.value.join('\n'),
+          genre: payload.genre,
+          voice: payload.voiceType
         })
-          .then(async (audioData) => {
-            // Convert audioUrl to Blob
-            const response = await fetch(audioData.audioUrl);
-            const ttsAudioBlob = await response.blob();
-            // Add BGM to audio
-            const mixedAudio = await addBgmToAudio(ttsAudioBlob, payload.genre, payload.voiceType);
-            audioUrl.value = mixedAudio.audioUrl || '';
+          .then((audioData) => {
+            audioUrl.value = audioData.audioUrl || '';
             loading.value = false;
           })
-          .catch(() => {
+          .catch((error) => {
+            console.error('Audio generation error:', error);
             audioUrl.value = '';
             loading.value = false;
           });
@@ -79,7 +65,8 @@ function onSing(payload) {
         loading.value = false;
       }
     })
-    .catch(() => {
+    .catch((error) => {
+      console.error('Lyrics generation error:', error);
       lyrics.value = ['Error fetching lyrics'];
       loading.value = false;
     });
