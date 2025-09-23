@@ -24,7 +24,7 @@ app.get("/", (req, res) => {
 });
 
 // Helper function to poll Suno API for task completion
-async function pollSunoTask(taskId, maxAttempts = 30, intervalMs = 10000) {
+async function pollSunoTask(taskId, maxAttempts = 30, intervalMs = 10000, waitForFullSuccess = false) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await axios.get(`https://api.sunoapi.org/api/v1/generate/record-info?taskId=${taskId}`, {
@@ -43,12 +43,12 @@ async function pollSunoTask(taskId, maxAttempts = 30, intervalMs = 10000) {
           const songs = taskData.response.sunoData;
           const completedSong = songs.find(song => song.audioUrl);
           if (completedSong) {
-            return completedSong;
+            return { song: completedSong, fullSuccess: true };
           }
         }
         
-        // Also check during TEXT_SUCCESS or FIRST_SUCCESS for available audio
-        if ((taskData.status === 'TEXT_SUCCESS' || taskData.status === 'FIRST_SUCCESS') && taskData.response && taskData.response.sunoData) {
+        // If not waiting for full success, also check during TEXT_SUCCESS or FIRST_SUCCESS for available audio
+        if (!waitForFullSuccess && (taskData.status === 'TEXT_SUCCESS' || taskData.status === 'FIRST_SUCCESS') && taskData.response && taskData.response.sunoData) {
           const songs = taskData.response.sunoData;
           console.log(`Checking sunoData array (length: ${songs.length}):`, songs.map(s => ({ id: s.id, audioUrl: s.audioUrl, status: s.status })));
           
@@ -56,7 +56,7 @@ async function pollSunoTask(taskId, maxAttempts = 30, intervalMs = 10000) {
           const completedSong = songs.find(song => song.audioUrl && song.audioUrl.trim() !== '');
           if (completedSong) {
             console.log('Found completed song with audioUrl:', completedSong.audioUrl);
-            return completedSong;
+            return { song: completedSong, fullSuccess: false };
           }
         }
         
@@ -146,20 +146,92 @@ app.post("/api/karaoke-audio", async (req, res) => {
     
     // Poll for completion
     console.log('Polling for Suno task completion...');
-    const completedSong = await pollSunoTask(taskId, 60, 5000); // Increased attempts and reduced interval
+    const result = await pollSunoTask(taskId, 60, 5000); // Increased attempts and reduced interval
+    const completedSong = result.song;
     
     console.log('SUNO SONG COMPLETED:', completedSong.audioUrl);
     
-    // Download the generated audio
-    const audioResponse = await axios.get(completedSong.audioUrl, {
-      responseType: "arraybuffer",
-    });
+    // Automatically fetch timestamped lyrics right after audio generation
+    let timestampedLyrics = null;
+    const timeStampPayload = {
+      taskId: taskId,
+      audioId: completedSong.id,
+      musicIndex: 0
+    }
+    console.log('Timestamp payload:', timeStampPayload);
     
-    res.set({
-      "Content-Type": "audio/mpeg",
-      "Content-Disposition": "inline; filename=karaoke.mp3",
+    try {
+      console.log('🎵 Automatically fetching timestamped lyrics...');
+      
+      // If we don't have full success yet, wait for it or add delay
+      if (!result.fullSuccess) {
+        console.log('⏱️ Audio ready but waiting for full completion before fetching timestamps...');
+        try {
+          // Try to wait for full success
+          const fullResult = await pollSunoTask(taskId, 20, 3000, true); // Wait for full success
+          console.log('✅ Full success achieved, proceeding with timestamp fetch');
+        } catch (timeoutError) {
+          console.log('⚠️ Full success timeout, proceeding anyway with delay...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+      
+      const timestampedResponse = await axios.post(
+        process.env.SUNO_TIMESTAMPED_API_URL,
+        timeStampPayload,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.SUNO_API_KEY}`,
+          },
+        }
+      );
+
+      console.log('Timestamped response:', timestampedResponse.data);
+      
+      if (timestampedResponse.data.code === 200) {
+        timestampedLyrics = timestampedResponse.data.data;
+        console.log('✅ Successfully fetched timestamped lyrics automatically');
+      } else {
+        console.warn('⚠️ Could not fetch timestamped lyrics:', timestampedResponse.data.msg);
+        
+        // If it's still not ready, try one more time after additional delay
+        if (timestampedResponse.data.msg && timestampedResponse.data.msg.includes('unsuccessful')) {
+          console.log('🔄 Retrying timestamped lyrics fetch after 5 more seconds...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const retryResponse = await axios.post(
+            process.env.SUNO_TIMESTAMPED_API_URL,
+            timeStampPayload,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${process.env.SUNO_API_KEY}`,
+              },
+            }
+          );
+          
+          if (retryResponse.data.code === 200) {
+            timestampedLyrics = retryResponse.data.data;
+            console.log('✅ Successfully fetched timestamped lyrics on retry');
+          } else {
+            console.warn('⚠️ Retry failed for timestamped lyrics:', retryResponse.data.msg);
+          }
+        }
+      }
+    } catch (timestampError) {
+      console.warn('⚠️ Error fetching timestamped lyrics:', timestampError.message);
+      // Continue without timestamped lyrics - not a critical error
+    }
+    
+    // Return audio metadata with ID and timestamped lyrics
+    res.json({
+      audioUrl: completedSong.audioUrl,
+      audioId: completedSong.id,
+      taskId: taskId,
+      timestampedLyrics: timestampedLyrics, // Include timestamped lyrics in response
+      success: true
     });
-    res.send(audioResponse.data);
     
   } catch (error) {
     console.error('SUNO KARAOKE ERROR:', error.response?.data || error.message);
@@ -170,14 +242,18 @@ app.post("/api/karaoke-audio", async (req, res) => {
   }
 });
 
-// 🎤 Generate Lyrics
+
+// �🎤 Generate Lyrics
 app.post("/api/lyrics", async (req, res) => {
   try {
     const { code, genre, language } = req.body;
     console.log('LYRICS REQUEST:', { code, genre, language });
     // GPT-4o expects a chat completion format
       let systemPrompt = `You are a creative assistant that turns code into karaoke lyrics. Genre: ${genre}, Language: ${language}.`;
-      let userPrompt = `Convert this code to karaoke lyrics. The lyrics should be suitable for singing and flowing musically.\n${code}`;
+      let userPrompt = `Convert this code to karaoke lyrics. 
+      Do NOT include section labels like "chorus", "verse", "outro", or any similar headings—just provide the lyrics 
+      lines only.Make the lyrics fit a song of about 30 to 40 seconds duration
+      The lyrics should be suitable for singing and flowing musically.\n${code}`;
       let maxTokens = 256;
 
     const payload = {

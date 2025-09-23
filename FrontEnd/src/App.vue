@@ -12,6 +12,8 @@
             v-if="singMode && !loading"
             :lyrics="lyrics"
             :audioUrl="audioUrl"
+            :audioId="audioId"
+            :timestampedLyrics="timestampedLyrics"
             :singMode="singMode"
             :voiceType="voiceType"
             @back="onBack"
@@ -31,6 +33,8 @@ import { fetchAudio, fetchLyrics } from './composables/karaoke';
 const singMode = ref(false);
 const lyrics = ref([]);
 const audioUrl = ref('');
+const audioId = ref('');
+const timestampedLyrics = ref(null);
 const voiceType = ref('Male');
 const resetForm = ref(false);
 const loading = ref(false);
@@ -40,6 +44,7 @@ function onSing(payload) {
   voiceType.value = payload.voiceType;
   lyrics.value = [];
   audioUrl.value = '';
+  audioId.value = '';
   loading.value = true;
 
   fetchLyrics(payload)
@@ -54,11 +59,20 @@ function onSing(payload) {
         })
           .then((audioData) => {
             audioUrl.value = audioData.audioUrl || '';
+            audioId.value = audioData.audioId || '';
+            timestampedLyrics.value = audioData.timestampedLyrics || null;
             loading.value = false;
+            console.log('Audio generated with ID:', audioData.audioId);
+            if (audioData.timestampedLyrics) {
+              console.log('✅ Timestamped lyrics included in response:', audioData.timestampedLyrics);
+            } else {
+              console.log('⚠️ No timestamped lyrics in response');
+            }
           })
           .catch((error) => {
             console.error('Audio generation error:', error);
             audioUrl.value = '';
+            audioId.value = '';
             loading.value = false;
           });
       } else {
@@ -77,6 +91,8 @@ function onBack() {
   singMode.value = false;
   lyrics.value = [];
   audioUrl.value = '';
+  audioId.value = '';
+  timestampedLyrics.value = null;
   voiceType.value = 'Male';
   resetForm.value = true;
 }

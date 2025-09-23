@@ -29,12 +29,14 @@ export async function fetchAudio(payload: { lyrics: string; genre: string; voice
     throw new Error(errorData.error || 'Failed to generate karaoke audio');
   }
   
-  const audioBuffer = await res.arrayBuffer();
-  const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-  const audioUrl = URL.createObjectURL(audioBlob);
-  console.log("fetchAudio URL:", audioUrl);
+  const audioData = await res.json();
+  console.log("fetchAudio response:", audioData);
   
-  return { audioUrl };
+  return { 
+    audioUrl: audioData.audioUrl,
+    audioId: audioData.audioId,
+    timestampedLyrics: audioData.timestampedLyrics
+  };
 }
 
 // Legacy function - kept for backward compatibility but not used with Suno API

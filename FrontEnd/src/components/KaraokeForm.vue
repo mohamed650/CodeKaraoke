@@ -34,7 +34,7 @@
       />
       <v-select
         v-model="language"
-        :items="['English', 'Japanese', 'Kannada']"
+        :items="['English', 'Japanese', 'Kannada', 'Hindi']"
         label="Language"
         variant="outlined"
         color="primary"
