@@ -44,15 +44,7 @@
               </span>
             </transition>
           </span>
-          
-          <!-- Timestamped Status -->
-          <div v-if="timestampedLyrics.length > 0" class="timestamp-status mt-2">
-            <v-chip size="small" color="success" variant="outlined">
-              <v-icon start>mdi-music-note</v-icon>
-              Synced ({{ timestampedLyrics.length }} sentences)
-            </v-chip>
           </div>
-        </div>
         
         <!-- Fallback to simple lyrics if no timestamped data -->
         <div v-else-if="lyrics && lyrics.length" class="lyric-story-container" style="height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
@@ -165,7 +157,7 @@
 </template>
 
 <script setup>
-import { defineEmits, defineProps, onMounted, ref, watch, computed } from 'vue';
+import { computed, defineEmits, defineProps, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
   lyrics: Array,
@@ -333,25 +325,26 @@ function calculateLyricTimings(lyrics, totalDuration) {
 
 // The basic lyric timing functions remain for simple sync
 
-// Process timestamped lyrics from props
+// Process timestamped lyrics from props to match with lyrics array
 function processTimestampedLyrics(timestampedData) {
   try {
     console.log("🎵 Processing timestamped lyrics from props:", timestampedData);
 
-    if (timestampedData && timestampedData.alignedWords) {
-      // Group words into sentences instead of individual words
-      const sentences = groupWordsIntoSentences(timestampedData.alignedWords);
+    if (timestampedData && timestampedData.alignedWords && props.lyrics && props.lyrics.length > 0) {
+      // Match timestamped data with original lyrics array
+      const matchedTimestamps = matchTimestampsToLyrics(timestampedData.alignedWords, props.lyrics);
       
-      timestampedLyrics.value = sentences.map((sentence, index) => ({
-        start: sentence.start,
-        end: sentence.end,
-        text: sentence.text,
+      timestampedLyrics.value = matchedTimestamps.map((lyric, index) => ({
+        start: lyric.start,
+        end: lyric.end,
+        text: lyric.text,
         index,
       }));
-      console.log("✅ Processed timestamped lyrics:", timestampedLyrics.value.length, "sentences");
+      
+      console.log("✅ Processed timestamped lyrics matched to original:", timestampedLyrics.value.length, "lines");
       return true;
     } else {
-      console.warn("⚠️ No alignedWords found in timestamped data");
+      console.warn("⚠️ No alignedWords or original lyrics found for matching");
       timestampedLyrics.value = [];
       return false;
     }
@@ -362,71 +355,101 @@ function processTimestampedLyrics(timestampedData) {
   }
 }
 
-// Helper function to group words into sentences
-function groupWordsIntoSentences(alignedWords) {
-  const sentences = [];
-  let currentSentence = {
-    words: [],
-    start: null,
-    end: null,
-    text: ''
-  };
+// New function to match timestamps with original lyrics array
+function matchTimestampsToLyrics(alignedWords, originalLyrics) {
+  const allWords = alignedWords.map(word => ({
+    word: word.word.replace(/[^\w\s]/g, '').toLowerCase(), // Clean word for matching
+    start: word.startS,
+    end: word.endS,
+    originalWord: word.word
+  }));
 
-  for (let i = 0; i < alignedWords.length; i++) {
-    const word = alignedWords[i];
-    
-    // Start new sentence if this is the first word
-    if (currentSentence.words.length === 0) {
-      currentSentence.start = word.startS;
+  const matchedLyrics = [];
+  let currentWordIndex = 0;
+
+  for (let i = 0; i < originalLyrics.length; i++) {
+    const lyricLine = originalLyrics[i];
+    const lyricWords = lyricLine.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .split(/\s+/) // Split on whitespace
+      .filter(word => word.length > 0);
+
+    let lineStart = null;
+    let lineEnd = null;
+    let wordsMatched = 0;
+    let searchStartIndex = currentWordIndex;
+
+    // Try to find matching words for this lyric line
+    for (let wordIndex = 0; wordIndex < lyricWords.length && currentWordIndex < allWords.length; wordIndex++) {
+      const lyricWord = lyricWords[wordIndex];
+      let found = false;
+
+      // Search for the word starting from current position
+      for (let j = currentWordIndex; j < Math.min(currentWordIndex + 10, allWords.length); j++) {
+        const alignedWord = allWords[j];
+        
+        // Check for exact match or partial match
+        if (alignedWord.word === lyricWord || 
+            alignedWord.word.includes(lyricWord) || 
+            lyricWord.includes(alignedWord.word) ||
+            // Handle contractions and variations
+            (lyricWord.length > 2 && alignedWord.word.length > 2 && 
+             (lyricWord.startsWith(alignedWord.word.substring(0, 3)) || 
+              alignedWord.word.startsWith(lyricWord.substring(0, 3))))) {
+          
+          if (lineStart === null) {
+            lineStart = alignedWord.start;
+          }
+          lineEnd = alignedWord.end;
+          currentWordIndex = j + 1;
+          wordsMatched++;
+          found = true;
+          break;
+        }
+      }
+
+      // If word not found, try to continue with timing estimation
+      if (!found && wordIndex === 0) {
+        // Estimate timing based on position if first word not found
+        const estimatedStart = currentWordIndex < allWords.length ? 
+          allWords[currentWordIndex].start : 
+          (i * (allWords[allWords.length - 1]?.end || 60) / originalLyrics.length);
+        lineStart = estimatedStart;
+      }
     }
-    
-    currentSentence.words.push(word);
-    currentSentence.end = word.endS;
-    
-    // Check if this word ends a sentence (contains punctuation or is the last word)
-    const isEndOfSentence = 
-      word.word.match(/[.!?]$/) || // Ends with punctuation
-      i === alignedWords.length - 1 || // Last word
-      (i < alignedWords.length - 1 && alignedWords[i + 1].startS - word.endS > 2.0); // Long pause to next word
-    
-    if (isEndOfSentence || currentSentence.words.length >= 8) { // Max 8 words per sentence
-      // Finalize current sentence
-      currentSentence.text = currentSentence.words.map(w => w.word.trim()).join(' ');
-      sentences.push({
-        start: currentSentence.start,
-        end: currentSentence.end,
-        text: currentSentence.text
-      });
-      
-      // Reset for next sentence
-      currentSentence = {
-        words: [],
-        start: null,
-        end: null,
-        text: ''
-      };
+
+    // Fallback timing if no words matched
+    if (lineStart === null || lineEnd === null) {
+      const totalDuration = allWords.length > 0 ? allWords[allWords.length - 1].end : 60;
+      const estimatedDuration = totalDuration / originalLyrics.length;
+      lineStart = i * estimatedDuration;
+      lineEnd = (i + 1) * estimatedDuration;
     }
-  }
-  
-  // Add any remaining words as a final sentence
-  if (currentSentence.words.length > 0) {
-    currentSentence.text = currentSentence.words.map(w => w.word.trim()).join(' ');
-    sentences.push({
-      start: currentSentence.start,
-      end: currentSentence.end,
-      text: currentSentence.text
+
+    // Ensure reasonable timing gaps between lines
+    if (i > 0 && lineStart < matchedLyrics[i - 1].end) {
+      lineStart = matchedLyrics[i - 1].end + 0.1;
+    }
+
+    matchedLyrics.push({
+      text: lyricLine,
+      start: lineStart,
+      end: lineEnd,
+      wordsMatched: wordsMatched,
+      totalWords: lyricWords.length
     });
+
+    console.log(`📝 Line ${i + 1}: "${lyricLine}" -> ${lineStart.toFixed(2)}s-${lineEnd.toFixed(2)}s (${wordsMatched}/${lyricWords.length} words matched)`);
   }
-  
-  console.log("📝 Grouped into", sentences.length, "sentences:", sentences.map(s => s.text));
-  return sentences;
+
+  return matchedLyrics;
 }
 
-// Update current lyric based on audio time
+// Update current lyric based on audio time - simplified to work with matched lyrics
 function updateCurrentLyric() {
   const time = currentTime.value;
   
-  // Use timestamped lyrics if available
+  // Use timestamped lyrics if available (now matched to original lyrics array)
   if (timestampedLyrics.value.length > 0) {
     let current = null;
     let next = null;
@@ -434,14 +457,14 @@ function updateCurrentLyric() {
     for (let i = 0; i < timestampedLyrics.value.length; i++) {
       const segment = timestampedLyrics.value[i];
       
-      // Check if current time is within this segment (with sentence-friendly timing)
+      // Check if current time is within this segment with some buffer
       if (time >= segment.start - 0.3 && time <= segment.end + 0.5) {
         current = segment;
         next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
         break;
       }
-      // Check if we should show the next sentence early (for readability)
-      else if (time >= segment.start - 1.0 && time < segment.start) {
+      // Show upcoming lyric a bit early for better readability
+      else if (time >= segment.start - 1.5 && time < segment.start) {
         current = segment;
         next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
         break;
@@ -457,6 +480,18 @@ function updateCurrentLyric() {
     currentLyric.value = Math.min(lyricIndex, props.lyrics.length - 1);
   }
 }
+
+// Watch for both lyrics and timestamped lyrics changes
+watch(
+  () => [props.timestampedLyrics, props.lyrics],
+  ([timestampedData, lyrics]) => {
+    if (timestampedData && lyrics && lyrics.length > 0 && !props.loading) {
+      console.log("🎵 Both timestamped and original lyrics available, processing match...");
+      processTimestampedLyrics(timestampedData);
+    }
+  },
+  { immediate: true }
+);
 
 // Update time and lyrics together
 function updateTimeAndLyrics() {
@@ -488,19 +523,6 @@ onMounted(() => {
     { immediate: true }
   );
 });
-
-// Watch for audioId to fetch timestamped lyrics
-// Watch for timestamped lyrics prop changes
-watch(
-  () => props.timestampedLyrics,
-  (timestampedData) => {
-    if (timestampedData && !props.loading) {
-      console.log("🎵 Timestamped lyrics received from props, processing...");
-      processTimestampedLyrics(timestampedData);
-    }
-  },
-  { immediate: true }
-);
 
 function handlePlayLyrics() {
   lyricsPlaying.value = true;
@@ -1154,16 +1176,5 @@ function handleBackClick() {
     opacity: 1; 
     transform: translateY(0); 
   }
-}
-
-.timestamp-status {
-  display: flex;
-  justify-content: center;
-}
-
-.timestamp-status .v-chip {
-  background: rgba(76, 175, 80, 0.1) !important;
-  border-color: rgba(76, 175, 80, 0.5) !important;
-  color: #4caf50 !important;
 }
 </style>
