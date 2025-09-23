@@ -250,7 +250,7 @@ app.post("/api/lyrics", async (req, res) => {
     console.log('LYRICS REQUEST:', { code, genre, language });
     // GPT-4o expects a chat completion format
       let systemPrompt = `You are a creative assistant that turns code into karaoke lyrics. Genre: ${genre}, Language: ${language}.`;
-      let userPrompt = `Convert this code to karaoke lyrics. 
+      let userPrompt = `Convert this code to fun karaoke lyrics. 
       Do NOT include section labels like "chorus", "verse", "outro", or any similar headings—just provide the lyrics 
       lines only.Make the lyrics fit a song of about 30 to 40 seconds duration
       The lyrics should be suitable for singing and flowing musically.\n${code}`;
