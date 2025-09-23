@@ -2,7 +2,9 @@
   <div v-if="singMode" class="vibe-coding-right d-flex flex-column align-center justify-center" style="width:600px; max-width:800px; margin-left:40px; position:relative; background:transparent; box-shadow:none;">
     <div v-if="loading" class="d-flex flex-column align-center justify-center" style="height:300px; width:100%;">
       <v-progress-circular indeterminate color="primary" size="64" />
-      <span class="text-h6 mt-4" style="color:#fff;">Generating lyrics and audio...</span>
+      <span class="text-h6 mt-4" style="color:#fff;">
+        Generating lyrics and audio...
+      </span>
     </div>
     <template v-else>
       <!-- Add gap above image -->
@@ -27,7 +29,33 @@
       </div>
       
       <div class="lyrics-below" style="width:100%; text-align:center; background:none; overflow-wrap:break-word; word-break:break-word;">
-        <div v-if="lyrics && lyrics.length" class="lyric-story-container" style="height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
+        <div v-if="currentTimestampedLyric" class="lyric-story-container" style="height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
+          <transition name="lyric-rise" mode="out-in">
+            <span :key="currentTimestampedLyric.text" class="text-h5 font-weight-bold" style="color:#fff; border-radius:8px; padding:6px 20px; display:inline-block; background:none; line-height: 1.2;">
+              {{ currentTimestampedLyric.text }}
+            </span>
+          </transition>
+          <span v-if="nextTimestampedLyric">
+            <transition name="lyric-rise" mode="out-in">
+              <span :key="'next-' + nextTimestampedLyric.text"
+                class="text-body1 font-weight-medium lyric-next"
+                style="display:block; text-align:center; opacity:0.7; margin-top:8px; color:#fff; background:none;">
+                {{ nextTimestampedLyric.text }}
+              </span>
+            </transition>
+          </span>
+          
+          <!-- Timestamped Status -->
+          <div v-if="timestampedLyrics.length > 0" class="timestamp-status mt-2">
+            <v-chip size="small" color="success" variant="outlined">
+              <v-icon start>mdi-music-note</v-icon>
+              Synced ({{ timestampedLyrics.length }} sentences)
+            </v-chip>
+          </div>
+        </div>
+        
+        <!-- Fallback to simple lyrics if no timestamped data -->
+        <div v-else-if="lyrics && lyrics.length" class="lyric-story-container" style="height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;">
           <transition name="lyric-rise" mode="out-in">
             <span :key="currentLyric" class="text-h5 font-weight-bold" style="color:#fff; border-radius:8px; padding:6px 20px; display:inline-block; background:none; line-height: 1.2;">
               {{ lyrics[currentLyric] }}
@@ -42,12 +70,10 @@
               </span>
             </transition>
           </span>
-          
         </div>
         <div v-else>
           <span class="text-h6 font-weight-bold" style="color:#fff; border-radius:8px; padding:8px 24px; display:inline-block; background:none;">No lyrics generated.</span>
         </div>
-        <!-- Audio player removed: only lyrics are displayed -->
       </div>
       <div class="w-100 d-flex justify-center mb-2" style="margin-top:10px; background:transparent;">
         <!-- Compact Modern Audio Player -->
@@ -57,7 +83,7 @@
             :src="props.audioUrl"
             @play="handlePlayLyrics"
             @pause="handlePauseLyrics"
-            @timeupdate="syncLyricsToAudio"
+            @timeupdate="updateTimeAndLyrics"
             @loadedmetadata="updateDuration"
             @ended="handleAudioEnded"
             style="display: none;"
@@ -146,7 +172,9 @@ const props = defineProps({
   audioUrl: String,
   singMode: Boolean,
   voiceType: String,
-  loading: Boolean
+  loading: Boolean,
+  audioId: String,
+  timestampedLyrics: Object // Add timestampedLyrics prop from response
 });
 const emit = defineEmits(['back']);
 const karaokeVideo = ref(null);
@@ -154,6 +182,11 @@ const audioEl = ref(null);
 const currentLyric = ref(0);
 let lyricsPlaying = ref(false);
 const showManualPlay = ref(false);
+
+// Timestamped lyrics state
+const timestampedLyrics = ref([]);
+const currentTimestampedLyric = ref(null);
+const nextTimestampedLyric = ref(null);
 
 // Modern audio player state
 const isPlaying = ref(false);
@@ -298,12 +331,140 @@ function calculateLyricTimings(lyrics, totalDuration) {
   return timings;
 }
 
-watch(() => props.lyrics, (newLyrics) => {
-  currentLyric.value = 0;
-});
+// The basic lyric timing functions remain for simple sync
 
-// ...existing code...
+// Process timestamped lyrics from props
+function processTimestampedLyrics(timestampedData) {
+  try {
+    console.log("🎵 Processing timestamped lyrics from props:", timestampedData);
 
+    if (timestampedData && timestampedData.alignedWords) {
+      // Group words into sentences instead of individual words
+      const sentences = groupWordsIntoSentences(timestampedData.alignedWords);
+      
+      timestampedLyrics.value = sentences.map((sentence, index) => ({
+        start: sentence.start,
+        end: sentence.end,
+        text: sentence.text,
+        index,
+      }));
+      console.log("✅ Processed timestamped lyrics:", timestampedLyrics.value.length, "sentences");
+      return true;
+    } else {
+      console.warn("⚠️ No alignedWords found in timestamped data");
+      timestampedLyrics.value = [];
+      return false;
+    }
+  } catch (error) {
+    console.error("❌ Error processing timestamped lyrics:", error);
+    timestampedLyrics.value = [];
+    return false;
+  }
+}
+
+// Helper function to group words into sentences
+function groupWordsIntoSentences(alignedWords) {
+  const sentences = [];
+  let currentSentence = {
+    words: [],
+    start: null,
+    end: null,
+    text: ''
+  };
+
+  for (let i = 0; i < alignedWords.length; i++) {
+    const word = alignedWords[i];
+    
+    // Start new sentence if this is the first word
+    if (currentSentence.words.length === 0) {
+      currentSentence.start = word.startS;
+    }
+    
+    currentSentence.words.push(word);
+    currentSentence.end = word.endS;
+    
+    // Check if this word ends a sentence (contains punctuation or is the last word)
+    const isEndOfSentence = 
+      word.word.match(/[.!?]$/) || // Ends with punctuation
+      i === alignedWords.length - 1 || // Last word
+      (i < alignedWords.length - 1 && alignedWords[i + 1].startS - word.endS > 2.0); // Long pause to next word
+    
+    if (isEndOfSentence || currentSentence.words.length >= 8) { // Max 8 words per sentence
+      // Finalize current sentence
+      currentSentence.text = currentSentence.words.map(w => w.word.trim()).join(' ');
+      sentences.push({
+        start: currentSentence.start,
+        end: currentSentence.end,
+        text: currentSentence.text
+      });
+      
+      // Reset for next sentence
+      currentSentence = {
+        words: [],
+        start: null,
+        end: null,
+        text: ''
+      };
+    }
+  }
+  
+  // Add any remaining words as a final sentence
+  if (currentSentence.words.length > 0) {
+    currentSentence.text = currentSentence.words.map(w => w.word.trim()).join(' ');
+    sentences.push({
+      start: currentSentence.start,
+      end: currentSentence.end,
+      text: currentSentence.text
+    });
+  }
+  
+  console.log("📝 Grouped into", sentences.length, "sentences:", sentences.map(s => s.text));
+  return sentences;
+}
+
+// Update current lyric based on audio time
+function updateCurrentLyric() {
+  const time = currentTime.value;
+  
+  // Use timestamped lyrics if available
+  if (timestampedLyrics.value.length > 0) {
+    let current = null;
+    let next = null;
+    
+    for (let i = 0; i < timestampedLyrics.value.length; i++) {
+      const segment = timestampedLyrics.value[i];
+      
+      // Check if current time is within this segment (with sentence-friendly timing)
+      if (time >= segment.start - 0.3 && time <= segment.end + 0.5) {
+        current = segment;
+        next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
+        break;
+      }
+      // Check if we should show the next sentence early (for readability)
+      else if (time >= segment.start - 1.0 && time < segment.start) {
+        current = segment;
+        next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
+        break;
+      }
+    }
+    
+    currentTimestampedLyric.value = current;
+    nextTimestampedLyric.value = next;
+  }
+  // Fallback to simple timing for regular lyrics
+  else if (props.lyrics && props.lyrics.length > 0) {
+    const lyricIndex = Math.floor((time / duration.value) * props.lyrics.length);
+    currentLyric.value = Math.min(lyricIndex, props.lyrics.length - 1);
+  }
+}
+
+// Update time and lyrics together
+function updateTimeAndLyrics() {
+  if (audioEl.value) {
+    currentTime.value = audioEl.value.currentTime;
+    updateCurrentLyric();
+  }
+}
 
 // Auto play audio and lyrics when singMode is true and audioUrl is set
 onMounted(() => {
@@ -328,6 +489,19 @@ onMounted(() => {
   );
 });
 
+// Watch for audioId to fetch timestamped lyrics
+// Watch for timestamped lyrics prop changes
+watch(
+  () => props.timestampedLyrics,
+  (timestampedData) => {
+    if (timestampedData && !props.loading) {
+      console.log("🎵 Timestamped lyrics received from props, processing...");
+      processTimestampedLyrics(timestampedData);
+    }
+  },
+  { immediate: true }
+);
+
 function handlePlayLyrics() {
   lyricsPlaying.value = true;
   isPlaying.value = true;
@@ -338,48 +512,7 @@ function handlePauseLyrics() {
   isPlaying.value = false;
   if (karaokeVideo.value) karaokeVideo.value.pause();
 }
-function syncLyricsToAudio(e) {
-  // Use the event's currentTime for more accurate sync
-  const audio = e?.target || audioEl.value;
-  if (!audio) return;
-  
-  // Update current time for player display
-  currentTime.value = audio.currentTime;
-  
-  const totalDuration = audio.duration || 1;
-  const totalLines = props.lyrics.length;
-  
-  if (totalDuration > 0 && totalLines > 0) {
-    // Use smart timing calculation
-    const timings = calculateLyricTimings(props.lyrics, totalDuration);
-    
-    // Find which lyric should be displayed based on current time
-    let newLyricIndex = 0;
-    for (let i = 0; i < timings.length; i++) {
-      if (currentTime.value >= timings[i].startTime && currentTime.value < timings[i].endTime) {
-        newLyricIndex = i;
-        break;
-      } else if (currentTime.value >= timings[i].startTime) {
-        newLyricIndex = i; // Keep updating until we find the right range
-      }
-    }
-    
-    // Ensure index is within bounds
-    if (newLyricIndex < 0) newLyricIndex = 0;
-    if (newLyricIndex >= totalLines) newLyricIndex = totalLines - 1;
-    
-    if (newLyricIndex !== currentLyric.value) {
-      currentLyric.value = newLyricIndex;
-      console.log(`Smart sync: ${currentTime.toFixed(1)}s -> Line ${newLyricIndex + 1}/${totalLines}: "${props.lyrics[newLyricIndex]}"`);
-    }
-  }
-  
-  // Keep video in sync
-  if (karaokeVideo.value) {
-    if (lyricsPlaying.value) karaokeVideo.value.play();
-    else karaokeVideo.value.pause();
-  }
-}
+
 function handleBackClick() {
   currentLyric.value = 0;
   lyricsPlaying.value = false;
@@ -970,9 +1103,67 @@ function handleBackClick() {
     width: 3px;
   }
   
-  .compact-speed-btn, .compact-download-btn {
+  .compact-speed-btn, .compact-download-btn, .compact-calibration-btn {
     width: 35px !important;
     height: 35px !important;
   }
+}
+
+/* Enhanced Synchronization Button Styles */
+.compact-calibration-btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+.compact-calibration-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  transform: scale(1.1);
+}
+
+.compact-calibration-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.compact-calibration-btn:disabled:hover {
+  transform: none !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Sync Loading and Status Indicators */
+.sync-loading-container {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.sync-status-indicator {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+.timestamp-status {
+  display: flex;
+  justify-content: center;
+}
+
+.timestamp-status .v-chip {
+  background: rgba(76, 175, 80, 0.1) !important;
+  border-color: rgba(76, 175, 80, 0.5) !important;
+  color: #4caf50 !important;
 }
 </style>
