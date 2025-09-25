@@ -740,12 +740,12 @@ function handleBackClick() {
 .waveform-top-container {
   width: 100%;
   max-width: 500px;
-  height: 60px;
+  height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 15px auto 10px auto;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 20px;
   padding: 0;
   backdrop-filter: blur(10px);
@@ -763,9 +763,9 @@ function handleBackClick() {
 
 .wave-line-top {
   width: 4px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(180deg,  #66eada 0%, #a24b9c 100%);
   border-radius: 2px;
-  min-height: 6px;
+  min-height: 15px;
   opacity: 0.6;
   transition: all 0.2s ease;
   flex: 1;
@@ -789,7 +789,7 @@ function handleBackClick() {
 }
 
 .compact-player-container {
-  background: linear-gradient(135deg, rgba(30, 30, 30, 0.95), rgba(50, 50, 50, 0.85));
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.15));
   border-radius: 15px;
   padding: 16px 20px;
   display: flex;
@@ -802,7 +802,7 @@ function handleBackClick() {
 }
 
 .compact-play-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #ea66df 0%, #764ba2 100%);
   border: none;
   border-radius: 50%;
   width: 55px;
@@ -812,13 +812,13 @@ function handleBackClick() {
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 3px 10px rgba(226, 120, 231, 0.4);
   flex-shrink: 0;
 }
 
 .compact-play-btn:hover {
   transform: scale(1.05);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.6);
+  box-shadow: 0 4px 15px rgba(234, 102, 205, 0.6);
 }
 
 .compact-progress-section {
@@ -850,7 +850,7 @@ function handleBackClick() {
 }
 
 .compact-progress-fill {
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #dd66ea 0%, #a24b9c 100%);
   height: 100%;
   border-radius: 3px;
   position: absolute;
@@ -898,7 +898,7 @@ function handleBackClick() {
 }
 
 .compact-volume-fill {
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #dd66ea 0%, #a24b9c 100%);
   height: 100%;
   border-radius: 2px;
   position: absolute;
@@ -956,9 +956,9 @@ function handleBackClick() {
 
 .wave-bar {
   width: 3px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(180deg, #cb66ea 0%, #a24b9c 100%);
   border-radius: 2px;
-  height: 20%;
+  height: 25%;
   animation: none;
   transition: height 0.3s ease;
 }
@@ -974,7 +974,7 @@ function handleBackClick() {
 
 /* Main Waveform Display */
 .waveform-container {
-  height: 60px;
+  height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -996,9 +996,9 @@ function handleBackClick() {
 
 .wave-line {
   width: 3px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(180deg, #cb66ea 0%, #a24b9c 100%);
   border-radius: 2px;
-  min-height: 4px;
+  min-height: 8px;
   opacity: 0.6;
   transition: all 0.2s ease;
 }
@@ -1014,7 +1014,7 @@ function handleBackClick() {
 }
 
 .play-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #cb66ea 0%, #a24b9c 100%);
   border: none;
   border-radius: 50%;
   width: 60px;
@@ -1068,7 +1068,7 @@ function handleBackClick() {
 }
 
 .progress-fill {
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #cb66ea 0%, #a24b9c 100%);
   height: 100%;
   border-radius: 3px;
   position: absolute;
@@ -1120,7 +1120,7 @@ function handleBackClick() {
 }
 
 .volume-fill {
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #cb66ea 0%, #a24b9c 100%);
   height: 100%;
   border-radius: 2px;
   position: absolute;
@@ -1208,7 +1208,7 @@ function handleBackClick() {
   }
   
   .waveform-container {
-    height: 40px;
+    height: 60px;
   }
   
   .waveform-display {
@@ -1248,12 +1248,13 @@ function handleBackClick() {
   }
   
   .waveform-top-container {
-    height: 45px;
+    height: 60px;
     padding: 8px;
   }
   
   .wave-line-top {
     width: 3px;
+    min-height: 12px;
   }
   
   .compact-speed-btn, .compact-download-btn, .compact-calibration-btn {
