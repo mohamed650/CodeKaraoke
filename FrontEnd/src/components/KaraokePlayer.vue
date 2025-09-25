@@ -77,7 +77,13 @@
             @pause="handlePauseLyrics"
             @timeupdate="updateTimeAndLyrics"
             @loadedmetadata="updateDuration"
+            @loadeddata="handleAudioLoaded"
+            @canplay="handleCanPlay"
+            @seeking="handleSeeking"
+            @seeked="handleSeeked"
             @ended="handleAudioEnded"
+            @error="handleAudioError"
+            preload="metadata"
             style="display: none;"
           ></audio>
           
@@ -188,6 +194,7 @@ const volume = ref(1);
 const isMuted = ref(false);
 const playbackRate = ref(1);
 const speedOptions = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const isSeeking = ref(false); // Flag to prevent conflicts during seeking
 
 const progressPercent = computed(() => {
   return duration.value > 0 ? (currentTime.value / duration.value) * 100 : 0;
@@ -206,8 +213,59 @@ function togglePlayPause() {
 }
 
 function updateDuration() {
-  if (audioEl.value) {
+  if (audioEl.value && !isNaN(audioEl.value.duration)) {
     duration.value = audioEl.value.duration || 0;
+    console.log(`🎵 Audio duration loaded: ${duration.value.toFixed(2)}s`);
+  }
+}
+
+function handleAudioLoaded() {
+  console.log('🎵 Audio data loaded');
+  updateDuration();
+}
+
+function handleCanPlay() {
+  console.log('🎵 Audio can start playing');
+  updateDuration();
+}
+
+function handleSeeking() {
+  console.log('🎵 Audio seeking started');
+  isSeeking.value = true;
+}
+
+function handleSeeked() {
+  console.log(`🎵 Audio seeking completed to: ${audioEl.value?.currentTime.toFixed(2)}s`);
+  isSeeking.value = false; // Clear seeking flag
+  if (audioEl.value) {
+    // Sync our tracked time with actual audio time
+    currentTime.value = audioEl.value.currentTime;
+    updateCurrentLyric();
+  }
+}
+
+function handleAudioEnded() {
+  console.log('🎵 Audio playback ended naturally');
+  isPlaying.value = false;
+  lyricsPlaying.value = false;
+  currentLyric.value = 0;
+  
+  // Only reset if we're actually at the end (not due to seeking)
+  if (audioEl.value && audioEl.value.currentTime >= duration.value - 1) {
+    currentTime.value = 0;
+    audioEl.value.currentTime = 0;
+    console.log('🔄 Audio reset to beginning');
+  }
+}
+
+function handleAudioError(event) {
+  console.error('❌ Audio error:', event);
+  if (audioEl.value) {
+    console.error('Audio error details:', {
+      error: audioEl.value.error,
+      networkState: audioEl.value.networkState,
+      readyState: audioEl.value.readyState
+    });
   }
 }
 
@@ -219,15 +277,47 @@ function formatTime(seconds) {
 }
 
 function seekAudio(event) {
-  if (!audioEl.value || !duration.value) return;
+  if (!audioEl.value || !duration.value) {
+    console.warn('⚠️ Audio or duration not available for seeking');
+    return;
+  }
   
-  const rect = event.currentTarget.getBoundingClientRect();
-  const clickX = event.clientX - rect.left;
-  const clickPercent = clickX / rect.width;
-  const newTime = clickPercent * duration.value;
+  // Check if audio is sufficiently loaded
+  if (audioEl.value.readyState < 2) {
+    console.warn('⚠️ Audio not sufficiently loaded for seeking');
+    return;
+  }
   
-  audioEl.value.currentTime = newTime;
-  currentTime.value = newTime;
+  try {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width)); // Clamp between 0 and 1
+    const newTime = Math.max(0, Math.min(clickPercent * duration.value, duration.value - 0.5)); // Leave 0.5s buffer from end
+    
+    console.log(`🎵 Seeking to: ${newTime.toFixed(2)}s (${(clickPercent * 100).toFixed(1)}%) - Duration: ${duration.value.toFixed(2)}s`);
+    
+    // Prevent unnecessary seeks for very small differences
+    if (Math.abs(audioEl.value.currentTime - newTime) > 0.5) {
+      // Temporarily disable timeupdate to prevent conflicts
+      const wasPlaying = !audioEl.value.paused;
+      
+      // Set the current time
+      audioEl.value.currentTime = newTime;
+      
+      // Update our tracked time immediately
+      currentTime.value = newTime;
+      
+      // Update lyrics for the new position
+      updateCurrentLyric();
+      
+      console.log(`✅ Seeked to: ${audioEl.value.currentTime.toFixed(2)}s`);
+    } else {
+      console.log(`⏭️ Skipping seek - too small difference: ${Math.abs(audioEl.value.currentTime - newTime).toFixed(2)}s`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error seeking audio:', error);
+  }
 }
 
 function toggleMute() {
@@ -249,13 +339,6 @@ function setVolume(event) {
   if (newVolume > 0) isMuted.value = false;
 }
 
-function handleAudioEnded() {
-  isPlaying.value = false;
-  currentTime.value = 0;
-  currentLyric.value = 0;
-  lyricsPlaying.value = false;
-}
-
 function setPlaybackSpeed(speed) {
   if (!audioEl.value) return;
   
@@ -263,16 +346,55 @@ function setPlaybackSpeed(speed) {
   audioEl.value.playbackRate = speed;
 }
 
-function downloadAudio() {
+async function downloadAudio() {
   if (!props.audioUrl) return;
   
-  // Create a temporary anchor element to trigger download
-  const link = document.createElement('a');
-  link.href = props.audioUrl;
-  link.download = 'karaoke-audio.mp3'; // You can make this dynamic based on song name
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    console.log('🎵 Starting download from:', props.audioUrl);
+    
+    // Show loading state (you could add a loading indicator here)
+    const downloadBtn = document.querySelector('.compact-download-btn');
+    if (downloadBtn) {
+      downloadBtn.style.opacity = '0.5';
+      downloadBtn.style.pointerEvents = 'none';
+    }
+    
+    // Fetch the audio file as a blob
+    const response = await fetch(props.audioUrl);
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    console.log('✅ Audio blob created:', blob.size, 'bytes');
+    
+    // Create object URL for the blob
+    const blobUrl = window.URL.createObjectURL(blob);
+    
+    // Create download link
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = 'karaoke-audio.mp3'; // You can make this dynamic based on song name
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+    
+    console.log('✅ Download completed successfully');
+    
+  } catch (error) {
+    console.error('❌ Download failed:', error);
+    alert('Failed to download audio. Please try again.');
+  } finally {
+    // Restore button state
+    const downloadBtn = document.querySelector('.compact-download-btn');
+    if (downloadBtn) {
+      downloadBtn.style.opacity = '1';
+      downloadBtn.style.pointerEvents = 'auto';
+    }
+  }
 }
 
 function getWaveHeight(index) {
@@ -458,7 +580,7 @@ function updateCurrentLyric() {
       const segment = timestampedLyrics.value[i];
       
       // Check if current time is within this segment with some buffer
-      if (time >= segment.start - 0.3 && time <= segment.end + 0.5) {
+      if (time >= segment.start - 0.3 && time <= segment.end - 0.3) {
         current = segment;
         next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
         break;
@@ -495,9 +617,18 @@ watch(
 
 // Update time and lyrics together
 function updateTimeAndLyrics() {
-  if (audioEl.value) {
-    currentTime.value = audioEl.value.currentTime;
-    updateCurrentLyric();
+  // Don't update time during seeking to prevent conflicts
+  if (isSeeking.value) return;
+  
+  if (audioEl.value && !isNaN(audioEl.value.currentTime)) {
+    const newTime = audioEl.value.currentTime;
+    
+    // Only update if time has actually changed (avoid unnecessary updates)
+    // Use smaller threshold for smoother updates
+    if (Math.abs(currentTime.value - newTime) > 0.05) {
+      currentTime.value = newTime;
+      updateCurrentLyric();
+    }
   }
 }
 
