@@ -4,13 +4,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
-const ffmpeg = require("fluent-ffmpeg");
-const ffmpegStatic = require("ffmpeg-static");
 
-// Configure ffmpeg to use the static binary
-ffmpeg.setFfmpegPath(ffmpegStatic);
-
-const execAsync = require("util").promisify(require("child_process").exec);
 
 dotenv.config();
 const app = express();
@@ -30,7 +24,53 @@ app.get("/", (req, res) => {
   res.send("🚀 Code Karaoke Backend Running!");
 });
 
-// 🎵 Calculate dynamic lyrics duration based on content
+// 🎵 Helper function to analyze content for language-specific timing
+function analyzeContentForTiming(lyrics) {
+  // Unicode ranges for different character types
+  const hiraganaRegex = /[\u3040-\u309F]/g;
+  const katakanaRegex = /[\u30A0-\u30FF]/g;
+  const kanjiRegex = /[\u4E00-\u9FAF]/g;
+  const chineseRegex = /[\u4E00-\u9FFF]/g; // Extended Chinese range
+  const koreanRegex = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
+  const englishWordsRegex = /\b[a-zA-Z]+\b/g;
+  
+  const hiraganaCount = (lyrics.match(hiraganaRegex) || []).length;
+  const katakanaCount = (lyrics.match(katakanaRegex) || []).length;
+  const kanjiCount = (lyrics.match(kanjiRegex) || []).length;
+  const chineseCount = (lyrics.match(chineseRegex) || []).length;
+  const koreanCount = (lyrics.match(koreanRegex) || []).length;
+  const englishWords = (lyrics.match(englishWordsRegex) || []).length;
+  
+  const totalJapanese = hiraganaCount + katakanaCount + kanjiCount;
+  const totalChars = lyrics.length;
+  
+  console.log(`🎭 Language analysis: Hiragana: ${hiraganaCount}, Katakana: ${katakanaCount}, Kanji: ${kanjiCount}, Chinese: ${chineseCount}, Korean: ${koreanCount}, English words: ${englishWords}`);
+  
+  // Determine primary language and calculate timing
+  let primaryLanguage = 'english';
+  let timingRate = 1.8; // words per second for English
+  let contentUnits = englishWords;
+  
+  if (totalJapanese > totalChars * 0.3) {
+    primaryLanguage = 'japanese';
+    timingRate = 1.0; // characters per second for Japanese
+    contentUnits = totalJapanese;
+  } else if (chineseCount > totalChars * 0.3) {
+    primaryLanguage = 'chinese';
+    timingRate = 1.2; // characters per second for Chinese
+    contentUnits = chineseCount;
+  } else if (koreanCount > totalChars * 0.3) {
+    primaryLanguage = 'korean';
+    timingRate = 1.1; // characters per second for Korean
+    contentUnits = koreanCount;
+  }
+  
+  console.log(`🌏 Detected primary language: ${primaryLanguage}, Content units: ${contentUnits}, Timing rate: ${timingRate} units/sec`);
+  
+  return { primaryLanguage, timingRate, contentUnits };
+}
+
+// 🎵 Calculate dynamic lyrics duration based on content (language-aware)
 function calculateLyricsDuration(lyrics) {
   if (!lyrics || typeof lyrics !== 'string') {
     return 40; // Fallback to 40 seconds
@@ -39,111 +79,26 @@ function calculateLyricsDuration(lyrics) {
   // Clean up lyrics and split into meaningful lines
   const cleanLyrics = lyrics.trim().replace(/\n\s*\n/g, '\n'); // Remove empty lines
   const lines = cleanLyrics.split('\n').filter(line => line.trim().length > 0);
-  const totalWords = lyrics.split(/\s+/).filter(word => word.trim().length > 0).length;
   
-  console.log(`📊 Lyrics analysis: ${lines.length} lines, ${totalWords} words`);
+  // Analyze content for language-specific timing
+  const { primaryLanguage, timingRate, contentUnits } = analyzeContentForTiming(lyrics);
   
-  // Base calculation: 1.8 words per second (slower singing pace)
-  // Plus 4 seconds intro music, 3 seconds outro
-  const lyricsTime = totalWords / 1.8;
+  console.log(`📊 Lyrics analysis: ${lines.length} lines, ${contentUnits} ${primaryLanguage === 'english' ? 'words' : 'characters'}`);
+  
+  // Language-aware timing calculation
+  const lyricsTime = contentUnits / timingRate;
   const introTime = 4;
   const outroTime = 3;
   const pauseTime = lines.length * 0.5; // 0.5 seconds pause between lines
   
   const totalDuration = lyricsTime + introTime + outroTime + pauseTime;
   
-  // Keep between 30-50 seconds for optimal karaoke experience
-  const finalDuration = Math.max(30, Math.min(50, Math.ceil(totalDuration)));
+  console.log(`📊 Duration calculation (${primaryLanguage}): ${lyricsTime.toFixed(1)}s lyrics + ${introTime}s intro + ${outroTime}s outro + ${pauseTime.toFixed(1)}s pauses = ${totalDuration.toFixed(1)}s total`);
   
-  console.log(`📊 Duration calculation: ${lyricsTime.toFixed(1)}s lyrics + ${introTime}s intro + ${outroTime}s outro + ${pauseTime.toFixed(1)}s pauses = ${finalDuration}s total`);
-  
-  return finalDuration;
+  return Math.ceil(totalDuration);
 }
 
-// 🎵 Audio trimming function using fluent-ffmpeg
-async function trimAudioWithFFmpeg(audioUrl, durationSeconds, outputFileName) {
-  try {
-    console.log(`🎬 Trimming audio to ${durationSeconds} seconds...`);
-    
-    // Create temp directory if it doesn't exist
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    const outputPath = path.join(tempDir, outputFileName);
-    
-    // Use fluent-ffmpeg with better audio processing to prevent repetition
-    return new Promise((resolve, reject) => {
-      ffmpeg(audioUrl)
-        .seekInput(0) // Start from beginning
-        .duration(durationSeconds) // Trim to specified duration
-        .outputOptions([
-          '-c:a libmp3lame', // Re-encode with MP3 codec for better compatibility
-          '-b:a 128k', // Set audio bitrate
-          '-avoid_negative_ts make_zero',
-          '-fflags +genpts', // Generate presentation timestamps
-          '-async 1' // Audio sync method
-        ])
-        .on('start', (commandLine) => {
-          console.log('🎵 FFmpeg command:', commandLine);
-        })
-        .on('progress', (progress) => {
-          console.log(`🎬 Trimming progress: ${Math.round(progress.percent || 0)}%`);
-        })
-        .on('end', () => {
-          console.log('✅ Audio trimmed successfully with re-encoding');
-          resolve(outputPath);
-        })
-        .on('error', (err) => {
-          console.error('❌ FFmpeg re-encoding failed, trying stream copy:', err.message);
-          
-          // Fallback: Use stream copy method
-          ffmpeg(audioUrl)
-            .seekInput(0)
-            .duration(durationSeconds)
-            .outputOptions([
-              '-c:a copy',
-              '-avoid_negative_ts make_zero'
-            ])
-            .on('end', () => {
-              console.log('✅ Audio trimmed successfully with stream copy');
-              resolve(outputPath);
-            })
-            .on('error', (err2) => {
-              console.error('❌ Both FFmpeg methods failed:', err2.message);
-              reject(new Error(`Audio trimming failed: ${err2.message}`));
-            })
-            .save(outputPath);
-        })
-        .save(outputPath);
-    });
-  } catch (error) {
-    console.error('❌ FFmpeg setup failed:', error.message);
-    throw new Error(`Audio trimming setup failed: ${error.message}`);
-  }
-}
 
-// 🎵 Serve trimmed audio files
-app.get("/api/audio/:filename", (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'temp', filename);
-  
-  if (fs.existsSync(filePath)) {
-    // Add CORS headers for audio files
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-  } else {
-    res.status(404).json({ error: 'Audio file not found' });
-  }
-});
 
 // Helper function to poll Suno API for task completion
 async function pollSunoTask(taskId, maxAttempts = 30, intervalMs = 10000, waitForFullSuccess = false) {
@@ -242,7 +197,6 @@ app.post("/api/karaoke-audio", async (req, res) => {
       styleWeight: 0.7,
       weirdnessConstraint: 0.3,
       audioWeight: 0.7,
-      duration: 50,
       callBackUrl: `http://localhost:${PORT}/api/suno-callback` // Required by Suno API
     };
     
@@ -274,53 +228,16 @@ app.post("/api/karaoke-audio", async (req, res) => {
     
     console.log('SUNO SONG COMPLETED:', completedSong.audioUrl);
     
-    // 🎬 STEP 1: Trim audio first to prevent repetition
-    let finalAudioUrl = completedSong.audioUrl;
-    let trimmedAudioPath = null;
+    // � Use the full audio without trimming
+    const finalAudioUrl = completedSong.audioUrl;
+    console.log('✅ Using full audio for karaoke:', finalAudioUrl);
     
-    try {
-      console.log('🎬 Starting audio trimming process...');
-      
-      // Calculate dynamic duration based on lyrics content
-      const estimatedLyricsDuration = calculateLyricsDuration(lyrics);
-      console.log(`📊 Using calculated duration for trimming: ${estimatedLyricsDuration} seconds`);
-      
-      const trimFileName = `trimmed_${completedSong.id}.mp3`;
-      
-      // Trim the audio using ffmpeg
-      trimmedAudioPath = await trimAudioWithFFmpeg(
-        completedSong.audioUrl, 
-        estimatedLyricsDuration, 
-        trimFileName
-      );
-      
-      // Create local URL for the trimmed audio
-      finalAudioUrl = `http://localhost:${PORT}/api/audio/${trimFileName}`;
-      console.log('✅ Audio trimmed successfully, serving from:', finalAudioUrl);
-      
-    } catch (trimError) {
-      console.warn('⚠️ Audio trimming failed, using original:', trimError.message);
-      // Fall back to original audio if trimming fails
-      finalAudioUrl = completedSong.audioUrl;
-    }
-    
-    // 🎵 STEP 2: Generate timestamped lyrics from the trimmed audio
+    // 🎵 Generate timestamped lyrics from the complete audio
     let timestampedLyrics = null;
-    
-    // Create a new audio file for timestamped lyrics if we have trimmed audio
-    let audioIdForTimestamps = completedSong.id;
-    let audioUrlForTimestamps = finalAudioUrl;
-    
-    // If we successfully trimmed the audio, we need to upload it back to get timestamps
-    if (trimmedAudioPath && finalAudioUrl !== completedSong.audioUrl) {
-      console.log('🎵 Using trimmed audio for timestamped lyrics generation...');
-      // Note: For now, we'll use the original taskId and audioId since Suno API might need them
-      // In a more advanced implementation, we could upload the trimmed audio as a new file
-    }
     
     const timeStampPayload = {
       taskId: taskId,
-      audioId: audioIdForTimestamps,
+      audioId: completedSong.id,
       musicIndex: 0
     }
     console.log('Timestamp payload:', timeStampPayload);
@@ -356,7 +273,7 @@ app.post("/api/karaoke-audio", async (req, res) => {
       
       if (timestampedResponse.data.code === 200) {
         timestampedLyrics = timestampedResponse.data.data;
-        console.log('✅ Successfully fetched timestamped lyrics from trimmed audio');
+        console.log('✅ Successfully fetched timestamped lyrics from full audio');
       } else {
         console.warn('⚠️ Could not fetch timestamped lyrics:', timestampedResponse.data.msg);
         
@@ -391,12 +308,10 @@ app.post("/api/karaoke-audio", async (req, res) => {
     
     // Return audio metadata with ID and timestamped lyrics
     res.json({
-      audioUrl: finalAudioUrl, // Use trimmed audio URL
-      originalAudioUrl: completedSong.audioUrl, // Keep original for reference
+      audioUrl: finalAudioUrl, // Use full audio URL
       audioId: completedSong.id,
       taskId: taskId,
       timestampedLyrics: timestampedLyrics, // Include timestamped lyrics in response
-      trimmed: finalAudioUrl !== completedSong.audioUrl, // Indicate if audio was trimmed
       success: true
     });
     
@@ -434,8 +349,8 @@ app.post("/api/lyrics", async (req, res) => {
       ⚠️ STRICT RULE: Do NOT include any section labels like "chorus", "verse", "outro", 
       or anything in parentheses/brackets. ONLY output plain lyric lines. 
       The lyrics should flow musically and be suitable for singing.
-      Target length: 30–40 seconds.\n${code}`;
-      let maxTokens = 256;
+      Create a complete song.\n${code}`;
+      let maxTokens = 512;
 
     const payload = {
       messages: [
