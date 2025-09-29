@@ -299,8 +299,8 @@ app.post("/api/lyrics", async (req, res) => {
       ⚠️ STRICT RULE: Do NOT include any section labels like "chorus", "verse", "outro", 
       or anything in parentheses/brackets. ONLY output plain lyric lines. 
       The lyrics should flow musically and be suitable for singing.
-      Create a complete song.\n${code}`;
-    let maxTokens = 512;
+      Create a complete song upto 2 to 3 minutes.\n${code}`;
+    let maxTokens = 1024;
 
     const payload = {
       messages: [
