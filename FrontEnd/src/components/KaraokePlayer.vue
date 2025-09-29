@@ -209,14 +209,14 @@ function togglePlayPause() {
     audioEl.value.pause();
   } else {
     // If we're at or near the end of the song, reset to beginning
-    // if (audioEl.value.currentTime >= duration.value - 1) {
-    //   audioEl.value.currentTime = 0;
-    //   currentTime.value = 0;
-    //   currentLyric.value = 0;
-    //   currentTimestampedLyric.value = null;
-    //   nextTimestampedLyric.value = null;
-    //   console.log('🔄 Restarting song from beginning');
-    // }
+    if (audioEl.value.currentTime >= duration.value - 1) {
+      audioEl.value.currentTime = 0;
+      currentTime.value = 0;
+      currentLyric.value = 0;
+      currentTimestampedLyric.value = null;
+      nextTimestampedLyric.value = null;
+      console.log('🔄 Restarting song from beginning');
+    }
     audioEl.value.play();
   }
   isPlaying.value = !isPlaying.value;
@@ -490,64 +490,14 @@ function processTimestampedLyrics(timestampedData) {
   }
 }
 
-// Helper function to detect if text contains Japanese characters
-function isJapaneseText(text) {
-  const japaneseRegex = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/;
-  return japaneseRegex.test(text);
-}
 
-// Helper function to extract meaningful text segments from Japanese text
-function extractJapaneseSegments(text) {
-  // Remove punctuation and split into meaningful segments
-  const cleanText = text.replace(/[。、！？\s]/g, '');
-  const segments = [];
-  
-  // For Japanese, we'll work with character sequences since there are no spaces
-  let currentSegment = '';
-  for (let i = 0; i < cleanText.length; i++) {
-    const char = cleanText[i];
-    currentSegment += char;
-    
-    // Break segments at natural boundaries (hiragana-kanji transitions, etc.)
-    if (i < cleanText.length - 1) {
-      const nextChar = cleanText[i + 1];
-      const currentIsHiragana = /[\u3040-\u309F]/.test(char);
-      const nextIsHiragana = /[\u3040-\u309F]/.test(nextChar);
-      const currentIsKanji = /[\u4E00-\u9FAF]/.test(char);
-      const nextIsKanji = /[\u4E00-\u9FAF]/.test(nextChar);
-      
-      // Break on script transitions or every 3-4 characters
-      if ((currentIsHiragana && nextIsKanji) || 
-          (currentIsKanji && nextIsHiragana) || 
-          currentSegment.length >= 3) {
-        segments.push(currentSegment);
-        currentSegment = '';
-      }
-    }
-  }
-  
-  if (currentSegment) {
-    segments.push(currentSegment);
-  }
-  
-  return segments.filter(seg => seg.length > 0);
-}
 
-// Helper function to calculate character overlap between two strings
-function getCharacterOverlap(str1, str2) {
-  const chars1 = new Set(str1.split(''));
-  const chars2 = new Set(str2.split(''));
-  const intersection = new Set([...chars1].filter(x => chars2.has(x)));
-  const union = new Set([...chars1, ...chars2]);
-  return intersection.size / union.size;
-}
-
-// Enhanced function to match timestamps with original lyrics array (Japanese-aware)
+// Enhanced function to match timestamps with original lyrics array
 function matchTimestampsToLyrics(alignedWords, originalLyrics) {
   const allWords = alignedWords.map(word => ({
     word: word.word
       .replace(/^\[.*?\]\s*/g, '')  // Strip [Verse] etc. from Suno words
-      .replace(/[^\w\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '')  // Keep Japanese chars, remove punctuation
+      .replace(/[^\w\s]/g, '')      // Remove punctuation, keep only English words and spaces
       .trim(),
     start: word.startS,
     end: word.endS,
@@ -557,9 +507,6 @@ function matchTimestampsToLyrics(alignedWords, originalLyrics) {
   const matchedLyrics = [];
   let currentWordIndex = 0;
 
-  const hasJapanese = originalLyrics.some(lyric => isJapaneseText(lyric));
-  console.log(`🎌 Japanese text detected: ${hasJapanese}`);
-
   for (let i = 0; i < originalLyrics.length; i++) {
     const lyricLine = originalLyrics[i].trim();
     let lineStart = null;
@@ -567,112 +514,58 @@ function matchTimestampsToLyrics(alignedWords, originalLyrics) {
     let segmentsMatched = 0;
     let totalSegments = 0;
 
-    if (hasJapanese && isJapaneseText(lyricLine)) {
-      // Japanese text processing - character-based matching
-      const lyricSegments = extractJapaneseSegments(lyricLine);
-      totalSegments = lyricSegments.length;
-      
-      console.log(`🎌 Processing Japanese line: "${lyricLine}" -> segments:`, lyricSegments);
+    // English text processing - word-based matching
+    const lyricWords = lyricLine.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .split(/\s+/) // Split on whitespace
+      .filter(word => word.length > 0);
+    
+    totalSegments = lyricWords.length;
 
-      // Try to match Japanese segments with aligned words
-      for (let segIndex = 0; segIndex < lyricSegments.length && currentWordIndex < allWords.length; segIndex++) {
-        const segment = lyricSegments[segIndex];
-        let found = false;
+    for (let wordIndex = 0; wordIndex < lyricWords.length && currentWordIndex < allWords.length; wordIndex++) {
+      const lyricWord = lyricWords[wordIndex];
+      let found = false;
 
-        // Search for matching segments in aligned words
-        for (let j = currentWordIndex; j < Math.min(currentWordIndex + 12, allWords.length); j++) {  // Increase search window
-          const alignedWord = allWords[j];
+      // Search for the word starting from current position
+      for (let j = currentWordIndex; j < Math.min(currentWordIndex + 10, allWords.length); j++) {
+        const alignedWord = allWords[j];
+        
+        // Check for exact match or partial match
+        if (alignedWord.word.toLowerCase() === lyricWord || 
+            alignedWord.word.toLowerCase().includes(lyricWord) || 
+            lyricWord.includes(alignedWord.word.toLowerCase()) ||
+            // Handle contractions and variations
+            (lyricWord.length > 2 && alignedWord.word.length > 2 && 
+             (lyricWord.startsWith(alignedWord.word.toLowerCase().substring(0, 3)) || 
+              alignedWord.word.toLowerCase().startsWith(lyricWord.substring(0, 3))))) {
           
-          // For Japanese, check character overlap since word boundaries are unclear
-          if (alignedWord.word.includes(segment) || 
-              segment.includes(alignedWord.word) ||
-              // Check for character overlap (at least 60% match)
-              (segment.length >= 2 && alignedWord.word.length >= 2 && 
-               getCharacterOverlap(segment, alignedWord.word) >= 0.6)) {
-            
-            if (lineStart === null) {
-              lineStart = alignedWord.start;
-            }
-            lineEnd = alignedWord.end;
-            currentWordIndex = j + 1;
-            segmentsMatched++;
-            found = true;
-            console.log(`✅ Japanese segment "${segment}" matched with "${alignedWord.word}" at ${alignedWord.start.toFixed(2)}s`);
-            break;
+          if (lineStart === null) {
+            lineStart = alignedWord.start;
           }
-        }
-
-        if (!found && segIndex === 0) {
-          // Estimate timing for unmatched Japanese segments
-          const estimatedStart = currentWordIndex < allWords.length ? 
-            allWords[currentWordIndex].start : 
-            (i * (allWords[allWords.length - 1]?.end || 60) / originalLyrics.length);
-          lineStart = estimatedStart;
+          lineEnd = alignedWord.end;
+          currentWordIndex = j + 1;
+          segmentsMatched++;
+          found = true;
+          break;
         }
       }
 
-      // Fallback if low match rate
-      if (segmentsMatched / totalSegments < 0.5) {
-        console.warn(`⚠️ Low match for Japanese line ${i + 1}, estimating timings`);
-        const totalDuration = allWords[allWords.length - 1]?.end || 60;
-        const estimatedDuration = totalDuration / originalLyrics.length;
-        lineStart = i * estimatedDuration;
-        lineEnd = (i + 1) * estimatedDuration;
+      // If word not found, try to continue with timing estimation
+      if (!found && wordIndex === 0) {
+        // Estimate timing based on position if first word not found
+        const estimatedStart = currentWordIndex < allWords.length ? 
+          allWords[currentWordIndex].start : 
+          (i * (allWords[allWords.length - 1]?.end || 60) / originalLyrics.length);
+        lineStart = estimatedStart;
       }
-    } else {
-      // English text processing - word-based matching (original logic)
-      const lyricWords = lyricLine.toLowerCase()
-        .replace(/[^\w\s]/g, '') // Remove punctuation
-        .split(/\s+/) // Split on whitespace
-        .filter(word => word.length > 0);
-      
-      totalSegments = lyricWords.length;
+    }
 
-      for (let wordIndex = 0; wordIndex < lyricWords.length && currentWordIndex < allWords.length; wordIndex++) {
-        const lyricWord = lyricWords[wordIndex];
-        let found = false;
-
-        // Search for the word starting from current position
-        for (let j = currentWordIndex; j < Math.min(currentWordIndex + 10, allWords.length); j++) {
-          const alignedWord = allWords[j];
-          
-          // Check for exact match or partial match
-          if (alignedWord.word.toLowerCase() === lyricWord || 
-              alignedWord.word.toLowerCase().includes(lyricWord) || 
-              lyricWord.includes(alignedWord.word.toLowerCase()) ||
-              // Handle contractions and variations
-              (lyricWord.length > 2 && alignedWord.word.length > 2 && 
-               (lyricWord.startsWith(alignedWord.word.toLowerCase().substring(0, 3)) || 
-                alignedWord.word.toLowerCase().startsWith(lyricWord.substring(0, 3))))) {
-            
-            if (lineStart === null) {
-              lineStart = alignedWord.start;
-            }
-            lineEnd = alignedWord.end;
-            currentWordIndex = j + 1;
-            segmentsMatched++;
-            found = true;
-            break;
-          }
-        }
-
-        // If word not found, try to continue with timing estimation
-        if (!found && wordIndex === 0) {
-          // Estimate timing based on position if first word not found
-          const estimatedStart = currentWordIndex < allWords.length ? 
-            allWords[currentWordIndex].start : 
-            (i * (allWords[allWords.length - 1]?.end || 60) / originalLyrics.length);
-          lineStart = estimatedStart;
-        }
-      }
-
-      // Fallback timing if no words matched
-      if (lineStart === null || lineEnd === null) {
-        const totalDuration = allWords.length > 0 ? allWords[allWords.length - 1].end : 60;
-        const estimatedDuration = totalDuration / originalLyrics.length;
-        lineStart = i * estimatedDuration;
-        lineEnd = (i + 1) * estimatedDuration;
-      }
+    // Fallback timing if no words matched
+    if (lineStart === null || lineEnd === null) {
+      const totalDuration = allWords.length > 0 ? allWords[allWords.length - 1].end : 60;
+      const estimatedDuration = totalDuration / originalLyrics.length;
+      lineStart = i * estimatedDuration;
+      lineEnd = (i + 1) * estimatedDuration;
     }
 
     // Ensure reasonable timing gaps between lines
@@ -688,8 +581,7 @@ function matchTimestampsToLyrics(alignedWords, originalLyrics) {
       totalSegments
     });
 
-    const matchType = hasJapanese && isJapaneseText(lyricLine) ? "Japanese" : "English";
-    console.log(`📝 ${matchType} Line ${i + 1}: "${lyricLine}" -> ${lineStart.toFixed(2)}s-${lineEnd.toFixed(2)}s (${segmentsMatched}/${totalSegments} segments matched)`);
+    console.log(`📝 Line ${i + 1}: "${lyricLine}" -> ${lineStart.toFixed(2)}s-${lineEnd.toFixed(2)}s (${segmentsMatched}/${totalSegments} words matched)`);
   }
 
   return matchedLyrics;
