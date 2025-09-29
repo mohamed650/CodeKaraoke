@@ -606,7 +606,7 @@ function updateCurrentLyric() {
         const segment = timestampedLyrics.value[i];
         
         // Check if current time is within this segment with some buffer
-        if (time >= segment.start - 0.5 && time <= segment.end + 0.5) {
+        if (time >= segment.start - 0.5 && time <= segment.end + 0) {
           current = segment;
           next = i < timestampedLyrics.value.length - 1 ? timestampedLyrics.value[i + 1] : null;
           break;

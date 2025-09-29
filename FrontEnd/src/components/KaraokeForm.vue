@@ -34,13 +34,13 @@
       />
       <v-select
         v-model="language"
-        :items="['English', 'Japanese', 'Kannada', 'Hindi']"
+        :items="['English']"
         label="Language"
         variant="outlined"
         color="primary"
         class="mr-4"
         style="min-width: 150px;"
-        :disabled="singMode"
+        :disabled=true
       />
       <v-select
         v-model="voiceType"
